@@ -1,0 +1,90 @@
+{
+  "description": "Trust Gate configuration. Reference ranges are recovered from the project training data; thresholds are documented defaults.",
+  "version": "v1",
+  "agreement": {
+    "low_agreement_threshold": 0.1,
+    "comparison": "strict >"
+  },
+  "confidence": {
+    "claim_entropy_threshold": 0.8,
+    "provider_midpoint_distance_threshold": 0.2
+  },
+  "in_distribution": {
+    "claims": {
+      "critical_features": [
+        "Claim_Submitted_Amount",
+        "Claim_Allowed_Amount",
+        "Claim_Payment_Amount",
+        "Service_Count",
+        "Procedure_Count",
+        "Diagnosis_Count"
+      ],
+      "ranges": {
+        "Claim_Submitted_Amount": {
+          "min": 0.0,
+          "max": 598112.27,
+          "n_observed": 449322,
+          "n_missing": 0
+        },
+        "Claim_Allowed_Amount": {
+          "min": 0.0,
+          "max": 428547.1,
+          "n_observed": 449322,
+          "n_missing": 0
+        },
+        "Claim_Payment_Amount": {
+          "min": 0.0,
+          "max": 598112.27,
+          "n_observed": 449322,
+          "n_missing": 0
+        },
+        "Service_Count": {
+          "min": 0.0,
+          "max": 870.0,
+          "n_observed": 449322,
+          "n_missing": 0
+        },
+        "Procedure_Count": {
+          "min": 0.0,
+          "max": 10.0,
+          "n_observed": 449322,
+          "n_missing": 0
+        },
+        "Diagnosis_Count": {
+          "min": 1.0,
+          "max": 28.0,
+          "n_observed": 449322,
+          "n_missing": 0
+        }
+      }
+    },
+    "providers": {
+      "critical_features": [
+        "cms_total_beneficiaries",
+        "cms_total_services",
+        "claim_count"
+      ],
+      "ranges": {
+        "cms_total_beneficiaries": {
+          "min": 11.0,
+          "max": 6481920.0,
+          "n_observed": 845231,
+          "n_missing": 0
+        },
+        "cms_total_services": {
+          "min": 11.0,
+          "max": 11934657.7,
+          "n_observed": 845231,
+          "n_missing": 0
+        },
+        "claim_count": {
+          "min": 1.0,
+          "max": 115.0,
+          "n_observed": 33,
+          "n_missing": 845198,
+          "sparse_feature_note": "claim_count is present in only 33 of 845231 training rows; the recovered [1, 115] range comes from those observed values. Missing/non-numeric inputs follow the existing preprocessing: they are imputed with the artifact training median (2.0), which lies inside this range. The sparse provenance is documented rather than hiding the range or inventing one."
+        }
+      }
+    }
+  }
+}

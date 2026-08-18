@@ -1,0 +1,38 @@
+{
+  "description": "Phase 4 deterministic routing policy. Claim and provider sections are strictly separate - no cross-loading. Every threshold below is anchored to a documented statistic of the SAME held-out calibration-test split used by the calibration artifacts (never invented). Comparisons: calibrated risk escalates with '>= threshold'; signal counts escalate with '>= count'; predicate risk_check passes only when calibrated < full_investigation_risk_threshold.",
+  "route_precedence": ["full_investigation", "fast_track", "auto_approve"],
+  "claims": {
+    "full_investigation_risk_threshold": 58.76,
+    "fast_track_risk_threshold": 25.11,
+    "claim_value_auto_approve_max": 50000.0,
+    "min_supporting_signals_fast_track": 8,
+    "min_supporting_signals_full_investigation": 9,
+    "supporting_signal_severities": ["High", "Medium"],
+    "legitimate_classes": ["Legitimate"],
+    "rare_classes": ["Fraud", "Waste", "Abuse"],
+    "threshold_provenance": {
+      "population": "claim calibration-test split = Claim_Year == 2023 rows of data/claimsfinal_with_target.csv (15,766 rows, the same held-out split the claim calibration artifact was fitted on)",
+      "full_investigation_risk_threshold": "p95 of calibrated risk on that split = 58.7591",
+      "fast_track_risk_threshold": "p75 of calibrated risk on that split = 25.1098",
+      "supporting_signals": "count of Analytical Engine signals with severity High or Medium on a 3,000-row subsample (random_state=42) of the same split; fast_track = p90 = 8, full_investigation = p95 = 9 (max observed 10)",
+      "note": "auto-approve additionally requires ALL predicates to pass; it only means the case satisfies this configured automated policy, not that legitimacy is proven"
+    }
+  },
+  "providers": {
+    "full_investigation_risk_threshold": 100.0,
+    "fast_track_risk_threshold": 53.16,
+    "min_supporting_signals_fast_track": 6,
+    "min_supporting_signals_full_investigation": 7,
+    "supporting_signal_severities": ["High", "Medium"],
+    "legitimate_classes": ["Legitimate"],
+    "rare_classes": ["Suspicious"],
+    "threshold_provenance": {
+      "population": "provider calibration-test split = reproduced stratified 70/15/15 TEST part (train_test_split test_size=0.30 then 0.50, random_state=42) of data/Provider_with_potential_fraud.csv (181,121 rows; percentiles computed on a 30,000-row subsample, random_state=42)",
+      "full_investigation_risk_threshold": "p75 of calibrated risk on that split = 100.0 (p90 and p95 are also exactly 100.0 - the top quarter of the held-out provider population saturates at calibrated 100, so 100.0 is the first non-degenerate escalation anchor)",
+      "fast_track_risk_threshold": "p50 of calibrated risk on that split = 53.1561 (p75 collapses to the saturated 100.0 band, so p50 is used to keep a non-empty fast-track band)",
+      "supporting_signals": "count of Analytical Engine signals with severity High or Medium on a 3,000-row subsample (random_state=42) of the same split; fast_track = p75 = 6, full_investigation = p90 = 7 (max observed 11)",
+      "note": "provider cases predicted 'Suspicious' fail prediction_check and therefore route to full_investigation regardless of calibrated risk - a non-legitimate case type is a deterministic escalation"
+    }
+  },
+  "architecture_rule_for_future_llm_phase": "The routing layer decides the route. The LLM explains the route. The LLM must eventually be called for EVERY route including auto_approve, and auto_approve must not bypass the future LLM explanation. The LLM never determines the route."
+}

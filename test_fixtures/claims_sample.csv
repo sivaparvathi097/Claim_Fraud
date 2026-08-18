@@ -1,0 +1,4 @@
+Claim_ID,Provider_ID,BENE_ID,Claim_Type,Claim_Submitted_Amount,Claim_Allowed_Amount,Claim_Payment_Amount,Deductible_Amount,Service_Count,Claim_Duration_Days
+TEST-CLM-001,PRV-1001,BENE-5001,inpatient,28400,21300,19850,1200,11,6
+TEST-CLM-002,PRV-1002,BENE-5002,outpatient,4200,3100,2860,150,4,1
+TEST-CLM-003,PRV-1003,BENE-5003,hha,15600,12900,12100,0,22,30

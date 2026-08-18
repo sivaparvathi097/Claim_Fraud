@@ -1,0 +1,4 @@
+provider_npi,provider_state,provider_type,cms_total_beneficiaries,cms_total_services,claim_count,cms_weighted_avg_payment,services_per_beneficiary,peer_deviation_score
+1003012345,CA,Internal Medicine,120,480,410,212.4,4.0,0.62
+1003098765,TX,Home Health,88,940,512,96.7,10.7,1.18
+1003055555,NY,Cardiology,64,190,171,488.1,3.0,0.24

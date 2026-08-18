@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# Node
+node_modules/
+dist/
+
+# Environment
+.env
+
+# VS Code
+.vscode/
+
+# Large training datasets
+BACKEND/data/*.csv

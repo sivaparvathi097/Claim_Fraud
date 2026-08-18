@@ -1,0 +1,97 @@
+{
+  "method": "isotonic",
+  "model_name": "provider_fwa_hybrid_model",
+  "calibration_version": "provider-calibration-v1",
+  "calibrated_quantity": "P(Suspicious)",
+  "raw_risk_definition": "P(Suspicious) * 100 \u2014 UNCHANGED, preserved as raw_ml_risk_score",
+  "fitted_at": "2026-08-18T04:20:16.398792+00:00",
+  "random_state": 42,
+  "source_split": {
+    "role": "test",
+    "dataset": "data/Provider_with_potential_fraud.csv",
+    "split_definition": "stratified 70/15/15 (train_test_split test_size=0.30 then 0.50, random_state=42) \u2014 TEST part",
+    "held_out_from_training": true,
+    "used_for_ensemble_ratio_selection": false,
+    "n_samples": 181121,
+    "class_counts": {
+      "0": 90561,
+      "1": 90560
+    },
+    "positive_rate_suspicious": 0.49999723941453506
+  },
+  "method_selection": {
+    "fit_fraction": 0.6,
+    "selection_fraction": 0.4,
+    "candidates": {
+      "isotonic": {
+        "selection_brier": 0.015326727896479266,
+        "selection_ece": 0.0015039689230473539
+      },
+      "sigmoid": {
+        "selection_brier": 0.021573796739775566,
+        "selection_ece": 0.021573796739775553
+      }
+    },
+    "selected_by": "lowest Brier score on the untouched 40% selection part"
+  },
+  "fit_metrics_whole_heldout_split": {
+    "raw_brier": 0.020294263171584878,
+    "calibrated_brier": 0.015185158872949429,
+    "raw_ece": 0.036417963193533236,
+    "calibrated_ece": 0.0,
+    "n_samples": 181121,
+    "positive_rate": 0.49999723941453506
+  },
+  "selection_part_metrics": {
+    "raw_brier": 0.02020096076282132,
+    "calibrated_brier": 0.015326727896479266,
+    "raw_ece": 0.03589040555804285,
+    "calibrated_ece": 0.0015039689230473539,
+    "n_samples": 72449,
+    "positive_rate": 0.49999309859349333
+  },
+  "raw_vs_calibrated_examples": [
+    {
+      "quantile": 0.1,
+      "raw_probability": 0.000539,
+      "calibrated_probability": 0.0,
+      "raw_risk_score": 0.05,
+      "calibrated_risk_score": 0.0
+    },
+    {
+      "quantile": 0.25,
+      "raw_probability": 0.005945,
+      "calibrated_probability": 0.0,
+      "raw_risk_score": 0.59,
+      "calibrated_risk_score": 0.0
+    },
+    {
+      "quantile": 0.5,
+      "raw_probability": 0.479063,
+      "calibrated_probability": 0.497396,
+      "raw_risk_score": 47.91,
+      "calibrated_risk_score": 49.74
+    },
+    {
+      "quantile": 0.75,
+      "raw_probability": 0.998056,
+      "calibrated_probability": 1.0,
+      "raw_risk_score": 99.81,
+      "calibrated_risk_score": 100.0
+    },
+    {
+      "quantile": 0.9,
+      "raw_probability": 0.999931,
+      "calibrated_probability": 1.0,
+      "raw_risk_score": 99.99,
+      "calibrated_risk_score": 100.0
+    },
+    {
+      "quantile": 0.99,
+      "raw_probability": 0.999994,
+      "calibrated_probability": 1.0,
+      "raw_risk_score": 100.0,
+      "calibrated_risk_score": 100.0
+    }
+  ]
+}

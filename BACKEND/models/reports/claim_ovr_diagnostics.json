@@ -1,0 +1,29 @@
+{
+  "Fraud": {
+    "class_id": 1,
+    "positive_rate": 0.04934669542052518,
+    "raw_brier_selection": 0.044949243633214044,
+    "calibrated_brier_selection": 0.03521910210178338,
+    "raw_ece_selection": 0.0450360011222507,
+    "calibrated_ece_selection": 0.0072295664951247856,
+    "note": "diagnostic one-vs-rest only; NOT used by the production risk score"
+  },
+  "Waste": {
+    "class_id": 2,
+    "positive_rate": 0.155778257008753,
+    "raw_brier_selection": 0.16584681963930814,
+    "calibrated_brier_selection": 0.1319260973351152,
+    "raw_ece_selection": 0.1581560627941579,
+    "calibrated_ece_selection": 0.011022391817314904,
+    "note": "diagnostic one-vs-rest only; NOT used by the production risk score"
+  },
+  "Abuse": {
+    "class_id": 3,
+    "positive_rate": 0.03177724216668781,
+    "raw_brier_selection": 0.03686066156175155,
+    "calibrated_brier_selection": 0.02952674413215351,
+    "raw_ece_selection": 0.037059541833056805,
+    "calibrated_ece_selection": 0.002231619258055692,
+    "note": "diagnostic one-vs-rest only; NOT used by the production risk score"
+  }
+}

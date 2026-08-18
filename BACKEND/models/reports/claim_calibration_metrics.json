@@ -1,0 +1,101 @@
+{
+  "method": "isotonic",
+  "model_name": "claim_fwa_hybrid_model",
+  "calibration_version": "claim-calibration-v1",
+  "calibrated_quantity": "P(Fraud or Waste or Abuse) = 1 - P(Legitimate)",
+  "raw_risk_definition": "(1 - P(Legitimate)) * 100 \u2014 UNCHANGED, preserved as raw_ml_risk_score",
+  "fitted_at": "2026-08-18T04:19:40.990950+00:00",
+  "random_state": 42,
+  "source_split": {
+    "role": "test",
+    "dataset": "data/claimsfinal_with_target.csv",
+    "split_definition": "temporal split Claim_Year == 2023 (train 2015-2021, validation 2022)",
+    "held_out_from_training": true,
+    "smote_applied_to_split": false,
+    "used_for_ensemble_ratio_selection": false,
+    "n_samples": 15766,
+    "class_counts_Target_Label": {
+      "0": 12031,
+      "1": 778,
+      "2": 2456,
+      "3": 501
+    },
+    "positive_rate_non_legitimate": 0.236902194595966,
+    "label_column_in_local_dataset": "target"
+  },
+  "method_selection": {
+    "fit_fraction": 0.6,
+    "selection_fraction": 0.4,
+    "candidates": {
+      "isotonic": {
+        "selection_brier": 0.16930860682742777,
+        "selection_ece": 0.007358324351112427
+      },
+      "sigmoid": {
+        "selection_brier": 0.22134136673537338,
+        "selection_ece": 0.22134136673537338
+      }
+    },
+    "selected_by": "lowest Brier score on the untouched 40% selection part"
+  },
+  "fit_metrics_whole_heldout_split": {
+    "raw_brier": 0.21316893821593627,
+    "calibrated_brier": 0.16815214757261224,
+    "raw_ece": 0.20732245794327048,
+    "calibrated_ece": 3.356864872756641e-17,
+    "n_samples": 15766,
+    "positive_rate": 0.236902194595966
+  },
+  "selection_part_metrics": {
+    "raw_brier": 0.2143234534551815,
+    "calibrated_brier": 0.16930860682742777,
+    "raw_ece": 0.20791750679710705,
+    "calibrated_ece": 0.007358324351112427,
+    "n_samples": 6307,
+    "positive_rate": 0.23687965752338672
+  },
+  "raw_vs_calibrated_examples": [
+    {
+      "quantile": 0.1,
+      "raw_probability": 0.000285,
+      "calibrated_probability": 0.183472,
+      "raw_risk_score": 0.03,
+      "calibrated_risk_score": 18.35
+    },
+    {
+      "quantile": 0.25,
+      "raw_probability": 0.000556,
+      "calibrated_probability": 0.198102,
+      "raw_risk_score": 0.06,
+      "calibrated_risk_score": 19.81
+    },
+    {
+      "quantile": 0.5,
+      "raw_probability": 0.001315,
+      "calibrated_probability": 0.198102,
+      "raw_risk_score": 0.13,
+      "calibrated_risk_score": 19.81
+    },
+    {
+      "quantile": 0.75,
+      "raw_probability": 0.00476,
+      "calibrated_probability": 0.251098,
+      "raw_risk_score": 0.48,
+      "calibrated_risk_score": 25.11
+    },
+    {
+      "quantile": 0.9,
+      "raw_probability": 0.047462,
+      "calibrated_probability": 0.251098,
+      "raw_risk_score": 4.75,
+      "calibrated_risk_score": 25.11
+    },
+    {
+      "quantile": 0.99,
+      "raw_probability": 0.999943,
+      "calibrated_probability": 0.782609,
+      "raw_risk_score": 99.99,
+      "calibrated_risk_score": 78.26
+    }
+  ]
+}
