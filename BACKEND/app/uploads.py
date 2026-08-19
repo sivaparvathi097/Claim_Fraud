@@ -41,30 +41,39 @@ class UploadValidationError(ValueError):
 
 
 # ------------------------------------------------------------------ reading
-def _require_csv(filename: str | None, content_type: str | None) -> None:
+def _require_csv_or_excel(filename: str | None, content_type: str | None) -> None:
     name = (filename or "").lower()
-    if not name.endswith(".csv"):
+    if not (name.endswith(".csv") or name.endswith(".xlsx") or name.endswith(".xls")):
         ctype = (content_type or "").lower()
-        if "csv" not in ctype and "text/plain" not in ctype:
+        excel_types = {
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+        if "csv" not in ctype and "text/plain" not in ctype and ctype not in excel_types:
             raise UploadValidationError(
-                f"Unsupported file type: '{filename or 'unknown'}'. Only .csv uploads are accepted."
+                f"Unsupported file type: '{filename or 'unknown'}'. Only .csv, .xlsx, or .xls uploads are accepted."
             )
 
 
 def _read_frame(raw: bytes, filename: str | None) -> pd.DataFrame:
-    if not raw or not raw.strip():
+    if not raw:
         raise UploadValidationError("The uploaded file is empty.")
+    name = (filename or "").lower()
     try:
-        frame = pd.read_csv(io.BytesIO(raw))
+        if name.endswith(".xlsx") or name.endswith(".xls"):
+            frame = pd.read_excel(io.BytesIO(raw))
+        else:
+            frame = pd.read_csv(io.BytesIO(raw))
     except Exception as exc:  # parser errors -> clear 400, never a crash
-        raise UploadValidationError(f"Malformed CSV: {exc}") from exc
+        raise UploadValidationError(f"Malformed file: {exc}") from exc
     if frame.empty:
-        raise UploadValidationError("The uploaded CSV contains no data rows (header only).")
+        raise UploadValidationError("The uploaded file contains no data rows (header only).")
     if len(frame) > MAX_UPLOAD_ROWS:
         raise UploadValidationError(
             f"Upload too large: {len(frame)} rows (maximum {MAX_UPLOAD_ROWS} per batch)."
         )
     return frame
+
 
 
 def _drop_targets(frame: pd.DataFrame, targets: set[str]) -> pd.DataFrame:
@@ -217,8 +226,8 @@ def _coerce_numerics(frame: pd.DataFrame, model: HybridModel, label: str) -> pd.
 def parse_claim_upload(
     raw: bytes, filename: str | None, content_type: str | None, model: HybridModel
 ) -> list[dict[str, Any]]:
-    """Read + validate an uploaded claim CSV -> the ACTUAL uploaded records."""
-    _require_csv(filename, content_type)
+    """Read + validate an uploaded claim CSV/Excel -> the ACTUAL uploaded records."""
+    _require_csv_or_excel(filename, content_type)
     frame = _read_frame(raw, filename)
     frame = _drop_targets(frame, _CLAIM_TARGETS)  # labels never enter inference
     frame = _standardize_and_impute_columns(frame, model, "claim")
@@ -233,8 +242,8 @@ def parse_claim_upload(
 def parse_provider_upload(
     raw: bytes, filename: str | None, content_type: str | None, model: HybridModel
 ) -> list[dict[str, Any]]:
-    """Read + validate an uploaded provider CSV -> the ACTUAL uploaded records."""
-    _require_csv(filename, content_type)
+    """Read + validate an uploaded provider CSV/Excel -> the ACTUAL uploaded records."""
+    _require_csv_or_excel(filename, content_type)
     frame = _read_frame(raw, filename)
     frame = _drop_targets(frame, _PROVIDER_TARGETS)  # labels never enter inference
     frame = _standardize_and_impute_columns(frame, model, "provider")

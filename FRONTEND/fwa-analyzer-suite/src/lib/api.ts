@@ -81,7 +81,11 @@ export interface ApiClaimResult {
   deductible_amount: number | null;
   service_count: number | null;
   duration_days: number | null;
+  diagnosis_count?: number | null;
+  procedure_count?: number | null;
+  previous_claim_count?: number | null;
   signals: ApiSignal[];
+
   evidence: ApiEvidenceItem[];
   top_features: ApiTopFeature[];
   status: string;
@@ -113,7 +117,11 @@ export interface ApiProviderResult {
   weighted_avg_payment: number | null;
   services_per_beneficiary: number | null;
   peer_deviation_score: number | null;
+  cms_weighted_avg_submitted_charge?: number | null;
+  cms_total_beneficiary_days?: number | null;
+  treatment_service_percentile?: number | null;
   signals: ApiSignal[];
+
   evidence: ApiEvidenceItem[];
   top_features: ApiTopFeature[];
   status: string;
@@ -311,6 +319,9 @@ export function claimResultToRecord(r: ApiClaimResult): ClaimRecord {
     deductible: r.deductible_amount ?? 0,
     serviceCount: r.service_count ?? 0,
     duration: r.duration_days ?? 0,
+    diagnoses: r.diagnosis_count ?? 0,
+    procedures: r.procedure_count ?? 0,
+    previousClaims: r.previous_claim_count ?? 0,
     riskScore: Math.round(r.risk_score),
     rating: r.rating,
     status: r.routing && !r.routing.requires_human_review ? "Auto Approved" : "Pending Review",
@@ -319,11 +330,24 @@ export function claimResultToRecord(r: ApiClaimResult): ClaimRecord {
   };
 }
 
+
 export function providerResultToRecord(r: ApiProviderResult): ProviderRecord {
   const beneficiaries = r.total_beneficiaries ?? 0;
   const services = r.total_services ?? 0;
   const avgPayment = r.weighted_avg_payment ?? 0;
   const reimbursed = avgPayment * services;
+  
+  const submitted = r.cms_weighted_avg_submitted_charge ?? 0;
+  const highValueClaimsPct = avgPayment > 0 ? Math.round(((submitted / avgPayment) - 1) * 100) : 0;
+  
+  const chronicComplexPct = Math.round((r.services_per_beneficiary ?? 0) * 10);
+  
+  const days = r.cms_total_beneficiary_days ?? 0;
+  const claimCount = r.claim_count ?? 0;
+  const repeatMultiplePct = claimCount > 0 ? Math.round(((days / claimCount) - 1) * 100) : 0;
+  
+  const inpatientClaimSharePct = Math.round((r.treatment_service_percentile ?? 0) * 100);
+
   return {
     providerId: r.provider_npi ?? "—",
     specialty: r.provider_type ?? "—",
@@ -331,16 +355,21 @@ export function providerResultToRecord(r: ApiProviderResult): ProviderRecord {
     beneficiaryCount: beneficiaries,
     reimbursedAmount: reimbursed,
     paymentPerBeneficiary: beneficiaries > 0 ? reimbursed / beneficiaries : 0,
-    daysAdmitted: 0,
+    daysAdmitted: days,
     peerDeviation: Math.round((r.peer_deviation_score ?? 0) * 100),
     utilization: r.services_per_beneficiary ?? 0,
     riskScore: Math.round(r.risk_score),
     rating: r.rating,
     status: r.routing && !r.routing.requires_human_review ? "Auto Approved" : "Pending Review",
+    highValueClaimsPct,
+    chronicComplexPct,
+    repeatMultiplePct,
+    inpatientClaimSharePct,
     analysis: toAnalysis(r),
     api: r,
   };
 }
+
 
 /** Map the UI's friendly claim-type labels to the model's trained categories. */
 export const CLAIM_TYPE_MAP: Record<string, string> = {

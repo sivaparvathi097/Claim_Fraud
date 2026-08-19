@@ -146,6 +146,10 @@ class ClaimScoreResult(BaseModel):
     deductible_amount: float | None = None
     service_count: float | None = None
     duration_days: float | None = None
+    diagnosis_count: float | None = None
+    procedure_count: float | None = None
+    previous_claim_count: float | None = None
+
 
     # Analytical engine output (distinct from the ML score)
     signals: list[Signal] = Field(default_factory=list)
@@ -191,6 +195,10 @@ class ProviderScoreResult(BaseModel):
     weighted_avg_payment: float | None = None
     services_per_beneficiary: float | None = None
     peer_deviation_score: float | None = None
+    cms_weighted_avg_submitted_charge: float | None = None
+    cms_total_beneficiary_days: float | None = None
+    treatment_service_percentile: float | None = None
+
 
     # Analytical engine output (distinct from the ML score)
     signals: list[Signal] = Field(default_factory=list)

@@ -26,27 +26,17 @@ export const Route = createFileRoute("/providers/single")({
 
 const DEFAULTS = {
   providerId: "PRV-41127",
-  specialty: "Internal Medicine",
-  claimCount: "1840",
-  providerBeneficiaryCount: "612",
-  beneficiaryCount: "588",
-  reimbursed: "2140000",
-  deductible: "142000",
-  daysAdmitted: "684",
-  paymentPerBeneficiary: "3496",
-  peerDeviation: "118",
-  utilization: "1.84",
+  totalClaims: "1840",
+  uniqueBeneficiaries: "612",
+  averageClaimAmount: "3496",
+  highValueClaimsPct: "15",
+  chronicComplexPct: "24",
+  repeatMultiplePct: "8",
+  inpatientClaimSharePct: "32",
 };
 
 function SingleProviderPage() {
   const [form, setForm] = useState(DEFAULTS);
-  const [flags, setFlags] = useState({
-    priorInvestigation: true,
-    highRiskSpecialty: true,
-    sanctionList: false,
-    telehealthHeavy: false,
-    networkCluster: true,
-  });
   const [provider, setProvider] = useState<ProviderRecord | null>(null);
   const [analysing, setAnalysing] = useState(false);
 
@@ -56,13 +46,21 @@ function SingleProviderPage() {
 
   function analyse() {
     setAnalysing(true);
+    const totalClaims = Number(form.totalClaims) || 0;
+    const avgClaimAmount = Number(form.averageClaimAmount) || 0;
+    const highValueClaimsPct = Number(form.highValueClaimsPct) || 0;
+    const chronicComplexPct = Number(form.chronicComplexPct) || 0;
+    const repeatMultiplePct = Number(form.repeatMultiplePct) || 0;
+    const inpatientClaimSharePct = Number(form.inpatientClaimSharePct) || 0;
+
     const features: Record<string, unknown> = {
-      provider_type: form.specialty,
-      claim_count: Number(form.claimCount) || 0,
-      cms_total_beneficiaries: Number(form.beneficiaryCount) || 0,
-      cms_total_beneficiary_days: Number(form.daysAdmitted) || 0,
-      services_per_beneficiary: Number(form.utilization) || 0,
-      peer_deviation_score: (Number(form.peerDeviation) || 0) / 100,
+      claim_count: totalClaims,
+      cms_total_beneficiaries: Number(form.uniqueBeneficiaries) || 0,
+      cms_weighted_avg_payment: avgClaimAmount,
+      cms_weighted_avg_submitted_charge: avgClaimAmount * (1 + highValueClaimsPct / 100),
+      services_per_beneficiary: chronicComplexPct / 10,
+      cms_total_beneficiary_days: totalClaims * (1 + repeatMultiplePct / 100),
+      treatment_service_percentile: inpatientClaimSharePct / 100,
     };
     scoreProvider({ provider_npi: form.providerId || null, features })
       .then((result) => setProvider(providerResultToRecord(result)))
@@ -78,55 +76,16 @@ function SingleProviderPage() {
         subtitle="Enter provider attributes to generate a risk profile, dashboard and explainability report."
       />
 
-      <Panel title="Provider Attributes" description="Core scoring fields" icon={ClipboardList}>
+      <Panel title="Provider Attributes" description="Provider scoring fields" icon={ClipboardList}>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <TextField label="Provider ID / NPI" value={form.providerId} onChange={(v) => set("providerId", v)} />
-          <TextField label="Specialty" value={form.specialty} onChange={(v) => set("specialty", v)} />
-          <TextField label="Provider Claim Count" value={form.claimCount} onChange={(v) => set("claimCount", v)} />
-          <TextField
-            label="Provider Beneficiary Count"
-            value={form.providerBeneficiaryCount}
-            onChange={(v) => set("providerBeneficiaryCount", v)}
-          />
-          <TextField label="Beneficiary Count" value={form.beneficiaryCount} onChange={(v) => set("beneficiaryCount", v)} />
-          <TextField label="Reimbursed Amount" value={form.reimbursed} onChange={(v) => set("reimbursed", v)} />
-          <TextField label="Deductible Amount" value={form.deductible} onChange={(v) => set("deductible", v)} />
-          <TextField label="Days Admitted" value={form.daysAdmitted} onChange={(v) => set("daysAdmitted", v)} />
-          <TextField
-            label="Payment Per Beneficiary"
-            value={form.paymentPerBeneficiary}
-            onChange={(v) => set("paymentPerBeneficiary", v)}
-          />
-          <TextField label="Peer Deviation (%)" value={form.peerDeviation} onChange={(v) => set("peerDeviation", v)} />
-          <TextField label="Utilization Indicator" value={form.utilization} onChange={(v) => set("utilization", v)} />
-        </div>
-
-        <div className="mt-6 grid gap-3 rounded-xl border border-border/70 bg-secondary/40 p-4 sm:grid-cols-2 lg:grid-cols-3">
-          <CheckField
-            label="Prior investigation history"
-            checked={flags.priorInvestigation}
-            onChange={(v) => setFlags({ ...flags, priorInvestigation: v })}
-          />
-          <CheckField
-            label="High-risk specialty"
-            checked={flags.highRiskSpecialty}
-            onChange={(v) => setFlags({ ...flags, highRiskSpecialty: v })}
-          />
-          <CheckField
-            label="Sanction list match"
-            checked={flags.sanctionList}
-            onChange={(v) => setFlags({ ...flags, sanctionList: v })}
-          />
-          <ToggleField
-            label="Telehealth-heavy billing"
-            checked={flags.telehealthHeavy}
-            onChange={(v) => setFlags({ ...flags, telehealthHeavy: v })}
-          />
-          <ToggleField
-            label="Shared beneficiary cluster"
-            checked={flags.networkCluster}
-            onChange={(v) => setFlags({ ...flags, networkCluster: v })}
-          />
+          <TextField label="Provider ID" value={form.providerId} onChange={(v) => set("providerId", v)} />
+          <TextField label="Total Claims" value={form.totalClaims} onChange={(v) => set("totalClaims", v)} />
+          <TextField label="Unique Beneficiaries" value={form.uniqueBeneficiaries} onChange={(v) => set("uniqueBeneficiaries", v)} />
+          <TextField label="Average Claim Amount" value={form.averageClaimAmount} onChange={(v) => set("averageClaimAmount", v)} />
+          <TextField label="High-Value Claims %" value={form.highValueClaimsPct} onChange={(v) => set("highValueClaimsPct", v)} />
+          <TextField label="Chronic/Complex Cases %" value={form.chronicComplexPct} onChange={(v) => set("chronicComplexPct", v)} />
+          <TextField label="Repeat/Multiple Claims %" value={form.repeatMultiplePct} onChange={(v) => set("repeatMultiplePct", v)} />
+          <TextField label="Inpatient Claim Share %" value={form.inpatientClaimSharePct} onChange={(v) => set("inpatientClaimSharePct", v)} />
         </div>
 
         <div className="mt-6 flex justify-end">
@@ -149,6 +108,7 @@ function SingleProviderPage() {
     </AppShell>
   );
 }
+
 
 function TextField({
   label,

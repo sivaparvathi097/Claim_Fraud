@@ -21,6 +21,9 @@ export type ClaimRecord = {
   deductible: number;
   serviceCount: number;
   duration: number;
+  diagnoses?: number;
+  procedures?: number;
+  previousClaims?: number;
   riskScore: number;
   rating: Rating;
   status: ReviewStatus;
@@ -28,6 +31,7 @@ export type ClaimRecord = {
   /** The raw backend analysis result, used verbatim for LLM explanation. */
   api?: unknown;
 };
+
 
 export type ProviderRecord = {
   providerId: string;
@@ -39,6 +43,10 @@ export type ProviderRecord = {
   daysAdmitted: number;
   peerDeviation: number;
   utilization: number;
+  highValueClaimsPct?: number;
+  chronicComplexPct?: number;
+  repeatMultiplePct?: number;
+  inpatientClaimSharePct?: number;
   riskScore: number;
   rating: Rating;
   status: ReviewStatus;
