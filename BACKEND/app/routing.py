@@ -255,6 +255,7 @@ def _evaluate_predicates(
 
 
 # ------------------------------------------------------------------- decision
+# ------------------------------------------------------------------- decision
 def route_case(
     kind: str,
     upstream_context: dict[str, Any] | None,
@@ -272,44 +273,90 @@ def route_case(
     calibrated = observed["calibrated_risk_score"]
     support = observed["supporting_signal_count"]
     fast_threshold = float(entity_config["fast_track_risk_threshold"])
+    full_threshold = float(entity_config["full_investigation_risk_threshold"])
     fast_signals = int(entity_config["min_supporting_signals_fast_track"])
+    full_signals = int(entity_config["min_supporting_signals_full_investigation"])
 
-    # Precedence step 1: full_investigation — ANY failing predicate.
-    failed = [name for name in ROUTE_PRECEDENCE_PREDICATE_ORDER if not predicates[name]]
-    if failed:
-        return _decision(ROUTE_FULL_INVESTIGATION, reasons, predicates)
+    # Determine if all trust checks passed
+    context = upstream_context or {}
+    flags = context.get("trust_flags") or {}
+    
+    trust_passed = False
+    if flags:
+        low_agreement = bool(flags.get("low_agreement", True))
+        low_confidence = bool(flags.get("low_confidence", True))
+        in_distribution = bool(flags.get("in_distribution", False))
+        feature_completeness = bool(flags.get("feature_completeness", False))
+        
+        if not low_agreement and not low_confidence and in_distribution and feature_completeness:
+            trust_passed = True
 
-    # Precedence step 2: fast_track — every predicate passes, but moderate
-    # calibrated risk or a moderate count of supporting signals applies.
-    fast_reasons: list[str] = []
-    if calibrated is not None and float(calibrated) >= fast_threshold:
-        fast_reasons.append(
-            f"calibrated risk {float(calibrated):.2f} reaches the fast-track threshold {fast_threshold:.2f}"
-        )
-    if support >= fast_signals:
-        fast_reasons.append(
-            f"{support} supporting Analytical Engine signals reach the fast-track count {fast_signals}"
-        )
-    if fast_reasons:
-        return _decision(ROUTE_FAST_TRACK, fast_reasons, predicates)
+    # 1. Trust Checks Passed -> Auto Approve or Auto Reject (No Human Review)
+    if trust_passed:
+        # Check if the case is low risk and passes all non-trust checks
+        is_high_risk = False
+        reasons_list = []
+        if calibrated is not None and float(calibrated) >= fast_threshold:
+            is_high_risk = True
+            reasons_list.append(f"calibrated risk {float(calibrated):.2f} >= fast-track threshold {fast_threshold:.2f}")
+        if support >= fast_signals:
+            is_high_risk = True
+            reasons_list.append(f"{support} supporting signals >= fast-track count {fast_signals}")
+            
+        # Also check other non-trust predicates (prediction clean, etc.)
+        for pred in ("provider_clean_check", "claim_value_under_threshold_check", "not_rare_class_driven_check", "prediction_check"):
+            if not predicates.get(pred, True):
+                is_high_risk = True
+                reasons_list.append(f"failed non-trust check: {pred}")
+                
+        if is_high_risk:
+            # Auto Reject (mapped to full_investigation, but requires_human_review = False)
+            reasons_list.insert(0, "All trust checks passed: auto-rejecting case due to high risk or failed checks")
+            return _decision(ROUTE_FULL_INVESTIGATION, reasons_list, predicates, requires_human_review=False)
+        else:
+            # Auto Approve
+            cal_str = f"{float(calibrated):.2f}" if calibrated is not None else "N/A"
+            approve_reasons = [
+                "All checks passed: auto-approving based on low risk",
+                f"calibrated risk {cal_str} is below the fast-track threshold {fast_threshold:.2f}",
+                f"supporting signal count {support} is below the fast-track count {fast_signals}",
+            ]
+            return _decision(ROUTE_AUTO_APPROVE, approve_reasons, predicates, requires_human_review=False)
 
-    # Precedence step 3: auto_approve — every configured predicate passed and
-    # no escalation condition applied. This means the case satisfies the
-    # configured automated policy; it does NOT prove legitimacy.
-    auto_reasons = [
-        f"all {len(predicates)} routing predicates passed",
-        f"calibrated risk {float(calibrated):.2f} is below the fast-track threshold {fast_threshold:.2f}",
-        f"supporting signal count {support} is below the fast-track count {fast_signals}",
-    ]
-    return _decision(ROUTE_AUTO_APPROVE, auto_reasons, predicates)
+    # 2. Trust Checks Failed -> Human Review (Exceptional Case)
+    else:
+        escalate_to_full = False
+        reasons_list = ["Trust check(s) failed: routing to human review"] + reasons
+        
+        is_full = False
+        if calibrated is None:
+            is_full = True
+        elif float(calibrated) >= full_threshold:
+            is_full = True
+        if support >= full_signals:
+            is_full = True
+        if not predicates.get("prediction_check", True) or not predicates.get("provider_clean_check", True):
+            is_full = True
+            
+        if is_full:
+            return _decision(ROUTE_FULL_INVESTIGATION, reasons_list, predicates, requires_human_review=True)
+        else:
+            return _decision(ROUTE_FAST_TRACK, reasons_list, predicates, requires_human_review=True)
 
 
-def _decision(route: str, reasons: list[str], predicates: dict[str, bool]) -> dict[str, Any]:
+def _decision(
+    route: str,
+    reasons: list[str],
+    predicates: dict[str, bool],
+    requires_human_review: bool | None = None,
+) -> dict[str, Any]:
     ordered = {name: predicates[name] for name in ROUTE_PRECEDENCE_PREDICATE_ORDER}
+    if requires_human_review is None:
+        requires_human_review = (route != ROUTE_AUTO_APPROVE)
     return {
         "route": route,
         "reasons": reasons,
-        "requires_human_review": route != ROUTE_AUTO_APPROVE,
+        "requires_human_review": requires_human_review,
         "predicate_results": ordered,
     }
 

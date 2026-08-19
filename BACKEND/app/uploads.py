@@ -72,15 +72,103 @@ def _drop_targets(frame: pd.DataFrame, targets: set[str]) -> pd.DataFrame:
     return frame.drop(columns=drop)
 
 
-def _validate_columns(frame: pd.DataFrame, model: HybridModel, label: str) -> None:
-    required = list(model.feature_columns)
-    present = set(frame.columns)
-    missing = [c for c in required if c not in present]
-    if missing:
-        raise UploadValidationError(
-            f"The uploaded {label} CSV is missing required model columns: "
-            f"{', '.join(missing)}. Required columns: {', '.join(required)}."
-        )
+# Alias mappings for user-defined fields (case-insensitive, spaces allowed)
+CLAIM_ALIASES = {
+    "claim_id": ["claim id", "claim_id", "claimid"],
+    "bene_id": ["beneficiary id", "bene_id", "beneficiary_id", "beneficiaryid", "bene id", "bene_id"],
+    "claim_type": ["claim type", "claim_type", "claimtype"],
+    "claim_payment_amount": ["claim reimbursement", "claim_payment_amount", "reimbursement", "claim reimbursement amount"],
+    "deductible_amount": ["deductible amount", "deductible_amount", "deductible", "deductibleamount"],
+    "claim_duration_days": ["length of stay", "claim_duration_days", "duration", "lengthofstay", "los"],
+    "diagnosis_count": ["number of diagnoses", "diagnosis_count", "diagnoses", "diagnosiscount"],
+    "procedure_count": ["number of procedures", "procedure_count", "procedures", "procedurecount"],
+    "previous_claim_count": ["previous claims", "previous_claim_count", "previousclaims", "previousclaimcount"],
+}
+
+PROVIDER_ALIASES = {
+    "provider_npi": ["provider id", "provider_id", "providerid", "provider_npi", "npi"],
+    "claim_count": ["total claims", "claim_count", "totalclaims", "claimcount"],
+    "cms_total_beneficiaries": ["unique beneficiaries", "cms_total_beneficiaries", "uniquebeneficiaries", "beneficiary count", "beneficiarycount"],
+    "cms_weighted_avg_payment": ["average claim amount", "cms_weighted_avg_payment", "averageclaimamount", "averagepayment"],
+    "cms_weighted_avg_submitted_charge": ["high-value claims %", "high value claims %", "high_value_claims_%"],
+    "services_per_beneficiary": ["chronic/complex cases %", "chronic complex cases %", "chronic_complex_cases_%"],
+    "cms_total_beneficiary_days": ["repeat/multiple claims %", "repeat multiple claims %", "repeat_multiple_claims_%"],
+    "treatment_service_percentile": ["inpatient claim share %", "inpatient share %", "inpatient_claim_share_%"],
+}
+
+def _standardize_and_impute_columns(frame: pd.DataFrame, model: HybridModel, label: str) -> pd.DataFrame:
+    """Standardizes columns in the input dataframe to match model features using aliases.
+    Fills in any missing model feature columns with NaN so they are imputed.
+    """
+    aliases = CLAIM_ALIASES if label == "claim" else PROVIDER_ALIASES
+    
+    # 1. Lowercase column names for match
+    col_map = {}
+    for col in frame.columns:
+        col_lower = str(col).strip().lower()
+        col_map[col_lower] = col
+        
+    # 2. Rename columns based on aliases
+    renames = {}
+    for target_col, alias_list in aliases.items():
+        for alias in alias_list:
+            if alias in col_map:
+                renames[col_map[alias]] = target_col
+                break
+                
+    new_frame = frame.rename(columns=renames)
+    
+    # Special mappings for provider percentages/ratios if they are present:
+    if label == "provider":
+        if "cms_weighted_avg_submitted_charge" in new_frame.columns and "cms_weighted_avg_payment" in new_frame.columns:
+            try:
+                # High-value claims %: calculate submitted charge based on avg payment + high-value ratio
+                pct_val = pd.to_numeric(new_frame["cms_weighted_avg_submitted_charge"], errors="coerce").fillna(0)
+                new_frame["cms_weighted_avg_submitted_charge"] = pd.to_numeric(new_frame["cms_weighted_avg_payment"], errors="coerce") * (1 + pct_val / 100)
+            except Exception:
+                pass
+        if "services_per_beneficiary" in new_frame.columns:
+            try:
+                # Chronic/complex cases %
+                new_frame["services_per_beneficiary"] = pd.to_numeric(new_frame["services_per_beneficiary"], errors="coerce").fillna(0) / 10
+            except Exception:
+                pass
+        if "cms_total_beneficiary_days" in new_frame.columns and "claim_count" in new_frame.columns:
+            try:
+                # Repeat/multiple claims %
+                pct_val = pd.to_numeric(new_frame["cms_total_beneficiary_days"], errors="coerce").fillna(0)
+                new_frame["cms_total_beneficiary_days"] = pd.to_numeric(new_frame["claim_count"], errors="coerce") * (1 + pct_val / 100)
+            except Exception:
+                pass
+        if "treatment_service_percentile" in new_frame.columns:
+            try:
+                # Inpatient claim share %
+                new_frame["treatment_service_percentile"] = pd.to_numeric(new_frame["treatment_service_percentile"], errors="coerce").fillna(0) / 100
+            except Exception:
+                pass
+                
+    # Also replicate Claim_Payment_Amount to other charge/allowed fields if missing for claims
+    if label == "claim":
+        if "claim_payment_amount" in new_frame.columns:
+            if "claim_submitted_amount" not in new_frame.columns:
+                new_frame["claim_submitted_amount"] = new_frame["claim_payment_amount"]
+            if "claim_allowed_amount" not in new_frame.columns:
+                new_frame["claim_allowed_amount"] = new_frame["claim_payment_amount"]
+                
+    # 3. Add all model feature columns that are missing as NaN
+    for col in model.feature_columns:
+        if col not in new_frame.columns:
+            new_frame[col] = pd.Series(pd.NA, index=new_frame.index)
+            
+    # 4. Make sure primary ID columns exist
+    primary_id = "Claim_ID" if label == "claim" else "provider_npi"
+    if primary_id not in new_frame.columns:
+        # Check if the renamed column was lowercased
+        lower_id = primary_id.lower()
+        if lower_id in new_frame.columns:
+            new_frame = new_frame.rename(columns={lower_id: primary_id})
+            
+    return new_frame
 
 
 def _validate_identifiers(frame: pd.DataFrame, column: str, label: str) -> None:
@@ -106,19 +194,22 @@ def _validate_identifiers(frame: pd.DataFrame, column: str, label: str) -> None:
 def _coerce_numerics(frame: pd.DataFrame, model: HybridModel, label: str) -> pd.DataFrame:
     """Coerce numeric feature columns; invalid values -> NaN -> artifact policy.
 
-    A column that cannot be interpreted as numeric AT ALL is a schema error
-    (it would otherwise be silently replaced by medians row after row).
+    A column that cannot be interpreted as numeric AT ALL is a schema error.
     Individual bad cells follow the artifact's missing-value policy.
     """
     out = frame.copy()
     for col in model.numerical_features:
-        coerced = pd.to_numeric(out[col], errors="coerce")
-        had_values = out[col].notna().any()
-        if had_values and coerced.isna().all():
-            raise UploadValidationError(
-                f"Column '{col}' in the uploaded {label} CSV contains no valid numeric values."
-            )
-        out[col] = coerced
+        # Columns might contain NaN entirely or not exist in input file (which we filled with NaN).
+        # We only coerce columns that have at least one non-null element to save performance.
+        if out[col].notna().any():
+            coerced = pd.to_numeric(out[col], errors="coerce")
+            if coerced.isna().all():
+                raise UploadValidationError(
+                    f"Column '{col}' in the uploaded {label} CSV contains no valid numeric values."
+                )
+            out[col] = coerced
+        else:
+            out[col] = pd.to_numeric(out[col], errors="coerce")
     return out
 
 
@@ -130,7 +221,7 @@ def parse_claim_upload(
     _require_csv(filename, content_type)
     frame = _read_frame(raw, filename)
     frame = _drop_targets(frame, _CLAIM_TARGETS)  # labels never enter inference
-    _validate_columns(frame, model, "claim")
+    frame = _standardize_and_impute_columns(frame, model, "claim")
     _validate_identifiers(frame, "Claim_ID", "claim")
     for col in _CLAIM_OPTIONAL_IDS:  # preserved when present, never modified
         if col not in frame.columns:
@@ -146,7 +237,7 @@ def parse_provider_upload(
     _require_csv(filename, content_type)
     frame = _read_frame(raw, filename)
     frame = _drop_targets(frame, _PROVIDER_TARGETS)  # labels never enter inference
-    _validate_columns(frame, model, "provider")
+    frame = _standardize_and_impute_columns(frame, model, "provider")
     _validate_identifiers(frame, "provider_npi", "provider")
     frame = _coerce_numerics(frame, model, "provider")
     return frame.to_dict(orient="records")

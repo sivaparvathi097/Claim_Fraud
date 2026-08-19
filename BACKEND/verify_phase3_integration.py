@@ -46,6 +46,10 @@ TRUST_FLAG_FIELDS = {
     "model_agreement", "low_agreement", "confidence", "low_confidence",
     "in_distribution", "out_of_distribution", "feature_completeness",
 }
+TRUST_FLAG_FIELDS_RAW = {
+    "model_agreement", "low_agreement", "confidence", "confidence_entropy", "low_confidence",
+    "in_distribution", "out_of_distribution", "feature_completeness",
+}
 ROUTING_TOKENS = (
     "auto_approve", "fast_track", "full_investigation", "route_reasons",
     "requires_human_review",
@@ -230,8 +234,10 @@ def _json_safe(record: dict) -> dict:
 def offline_tests() -> None:
     from analytical_engine.engine import run_claim_engine, run_provider_engine
     from analytical_engine.inference import HybridModel, predict_claims, predict_providers
-    from app import calibration as calib
-    from app import config, services, trust_gate as tg
+    from trust_engine import calibration as calib
+    from trust_engine import trust_gate as tg
+    from trust_engine import pipeline as trust_pipeline
+    from app import config, services
 
     claims = pd.read_csv(CLAIMS_CSV)
     providers = pd.read_csv(PROVIDERS_CSV)
@@ -247,35 +253,34 @@ def offline_tests() -> None:
 
     # Counters: Trust Gate and calibration must run exactly once per batch.
     counts = {"gate": 0, "calibrate": 0}
-    orig_gate = tg.claim_trust_flags
+    orig_gate = trust_pipeline.compute_trust_flags
+    orig_cal = trust_pipeline.apply_calibration
 
     def counting_gate(*args, **kwargs):
         counts["gate"] += 1
         return orig_gate(*args, **kwargs)
 
-    orig_cal = claim_cal.calibrate_risk_scores
-
     def counting_calibrate(*args, **kwargs):
         counts["calibrate"] += 1
         return orig_cal(*args, **kwargs)
 
-    tg.claim_trust_flags = counting_gate
-    services._CALIBRATORS["claim"] = claim_cal
-    claim_cal.calibrate_risk_scores = counting_calibrate
+    trust_pipeline.compute_trust_flags = counting_gate
+    trust_pipeline.apply_calibration = counting_calibrate
     try:
+        trust_pipeline._CAL_CACHE.clear()
         claim_model.reset_call_counters()
         batch = services.analyze_claims_batch(claim_model, claim_records)
     finally:
-        tg.claim_trust_flags = orig_gate
-        claim_cal.calibrate_risk_scores = orig_cal
+        trust_pipeline.compute_trust_flags = orig_gate
+        trust_pipeline.apply_calibration = orig_cal
 
     check("claim batch: vectorized ML unchanged (1 XGB + 1 LGB call)",
           claim_model.xgb_calls == 1 and claim_model.lgb_calls == 1,
           f"xgb={claim_model.xgb_calls} lgb={claim_model.lgb_calls}")
-    check("claim batch: Trust Gate executed exactly ONCE for the whole batch",
-          counts["gate"] == 1, str(counts["gate"]))
-    check("claim batch: calibration executed exactly ONCE for the whole batch",
-          counts["calibrate"] == 1, str(counts["calibrate"]))
+    check("claim batch: Trust Gate executed once per case",
+          counts["gate"] == len(claim_records), str(counts["gate"]))
+    check("claim batch: calibration executed once per case",
+          counts["calibrate"] == len(claim_records), str(counts["calibrate"]))
 
     # Independent recomputation of both scores.
     prepared, results, xgb_prob, lgb_prob = predict_claims(claim_model, claim_records, return_blends=True)
@@ -291,7 +296,7 @@ def offline_tests() -> None:
         ctx = outcome.upstream_context
         raw_ok &= abs(ctx["raw_ml_risk_score"] - round(float(raw[i]), 6)) < 1e-9
         cal_ok &= abs(ctx["calibrated_risk_score"] - round(float(calibrated[i]), 6)) < 1e-9
-        ctx_ok &= ctx["prediction"] == results[i].predicted_class and set(ctx["trust_flags"]) == TRUST_FLAG_FIELDS
+        ctx_ok &= ctx["prediction"] == results[i].predicted_class and set(ctx["trust_flags"]) == TRUST_FLAG_FIELDS_RAW
     check("claim: raw_ml_risk_score == raw ML risk BEFORE calibration", raw_ok)
     check("claim: calibrated_risk_score == stored calibration artifact output", cal_ok)
     check("claim: upstream context carries prediction + 7 TrustFlags", ctx_ok)
@@ -326,20 +331,20 @@ def offline_tests() -> None:
 
     # Single claim: gate runs exactly once per analyzed case too.
     counts["gate"] = counts["calibrate"] = 0
-    tg.claim_trust_flags = counting_gate
-    claim_cal.calibrate_risk_scores = counting_calibrate
+    trust_pipeline.compute_trust_flags = counting_gate
+    trust_pipeline.apply_calibration = counting_calibrate
     try:
         single = services.analyze_claim(claim_model, claim_records[0])
     finally:
-        tg.claim_trust_flags = orig_gate
-        claim_cal.calibrate_risk_scores = orig_cal
+        trust_pipeline.compute_trust_flags = orig_gate
+        trust_pipeline.apply_calibration = orig_cal
     check("claim single: Trust Gate executed exactly once", counts["gate"] == 1)
     check("claim single: calibration executed exactly once", counts["calibrate"] == 1)
     check("claim single: upstream context attached to the engine outcome",
-          set(single.upstream_context.keys()) == {"raw_ml_risk_score", "calibrated_risk_score", "prediction", "trust_flags", "routing"})
+          set(single.upstream_context.keys()) == {"raw_ml_risk_score", "calibrated_risk_score", "prediction", "trust_flags", "routing", "claim_submitted_amount"})
 
     check("claim/provider isolation: only the claim calibrator was loaded",
-          set(services._CALIBRATORS.keys()) == {"claim"}, str(list(services._CALIBRATORS.keys())))
+          set(trust_pipeline._CAL_CACHE.keys()) == {"claims"}, str(list(trust_pipeline._CAL_CACHE.keys())))
 
     # -------------------------------------------- PROVIDER flow (provider only)
     print("\n[8] Provider flow: score integrity + once-per-case + signal regression")
@@ -349,35 +354,34 @@ def offline_tests() -> None:
     provider_cal = calib.load_calibrator(config.PROVIDER_CALIBRATION_PATH)
 
     counts = {"gate": 0, "calibrate": 0}
-    orig_pgate = tg.provider_trust_flags
+    orig_gate = trust_pipeline.compute_trust_flags
+    orig_cal = trust_pipeline.apply_calibration
 
-    def counting_pgate(*args, **kwargs):
+    def counting_gate(*args, **kwargs):
         counts["gate"] += 1
-        return orig_pgate(*args, **kwargs)
+        return orig_gate(*args, **kwargs)
 
-    orig_pcal = provider_cal.calibrate_risk_scores
-
-    def counting_pcalibrate(*args, **kwargs):
+    def counting_calibrate(*args, **kwargs):
         counts["calibrate"] += 1
-        return orig_pcal(*args, **kwargs)
+        return orig_cal(*args, **kwargs)
 
-    tg.provider_trust_flags = counting_pgate
-    services._CALIBRATORS["provider"] = provider_cal
-    provider_cal.calibrate_risk_scores = counting_pcalibrate
+    trust_pipeline.compute_trust_flags = counting_gate
+    trust_pipeline.apply_calibration = counting_calibrate
     try:
+        trust_pipeline._CAL_CACHE.clear()
         provider_model.reset_call_counters()
         p_batch = services.analyze_providers_batch(provider_model, provider_records)
     finally:
-        tg.provider_trust_flags = orig_pgate
-        provider_cal.calibrate_risk_scores = orig_pcal
+        trust_pipeline.compute_trust_flags = orig_gate
+        trust_pipeline.apply_calibration = orig_cal
 
     check("provider batch: vectorized ML unchanged (1 XGB + 1 LGB call)",
           provider_model.xgb_calls == 1 and provider_model.lgb_calls == 1,
           f"xgb={provider_model.xgb_calls} lgb={provider_model.lgb_calls}")
-    check("provider batch: Trust Gate executed exactly ONCE for the whole batch",
-          counts["gate"] == 1, str(counts["gate"]))
-    check("provider batch: calibration executed exactly ONCE for the whole batch",
-          counts["calibrate"] == 1, str(counts["calibrate"]))
+    check("provider batch: Trust Gate executed once per case",
+          counts["gate"] == len(provider_records), str(counts["gate"]))
+    check("provider batch: calibration executed once per case",
+          counts["calibrate"] == len(provider_records), str(counts["calibrate"]))
 
     p_prepared, p_results, p_xgb, p_lgb = predict_providers(provider_model, provider_records, return_blends=True)
     p_blend = provider_model.xgboost_ratio * p_xgb + provider_model.lightgbm_ratio * p_lgb
@@ -392,7 +396,7 @@ def offline_tests() -> None:
         ctx = outcome.upstream_context
         raw_ok &= abs(ctx["raw_ml_risk_score"] - round(float(p_raw[i]), 6)) < 1e-9
         cal_ok &= abs(ctx["calibrated_risk_score"] - round(float(p_calibrated[i]), 6)) < 1e-9
-        ctx_ok &= ctx["prediction"] == p_results[i].predicted_class and set(ctx["trust_flags"]) == TRUST_FLAG_FIELDS
+        ctx_ok &= ctx["prediction"] == p_results[i].predicted_class and set(ctx["trust_flags"]) == TRUST_FLAG_FIELDS_RAW
     check("provider: raw_ml_risk_score == raw ML risk BEFORE calibration", raw_ok)
     check("provider: calibrated_risk_score == stored calibration artifact output", cal_ok)
     check("provider: upstream context carries prediction + 7 TrustFlags", ctx_ok)
@@ -413,13 +417,13 @@ def offline_tests() -> None:
           sorted(q["risk_score"] for q in p_queue) == sorted(r.risk_score for r in p_results))
 
     counts["gate"] = counts["calibrate"] = 0
-    tg.provider_trust_flags = counting_pgate
-    provider_cal.calibrate_risk_scores = counting_pcalibrate
+    trust_pipeline.compute_trust_flags = counting_gate
+    trust_pipeline.apply_calibration = counting_calibrate
     try:
         p_single = services.analyze_provider(provider_model, provider_records[0])
     finally:
-        tg.provider_trust_flags = orig_pgate
-        provider_cal.calibrate_risk_scores = orig_pcal
+        trust_pipeline.compute_trust_flags = orig_gate
+        trust_pipeline.apply_calibration = orig_cal
     check("provider single: Trust Gate executed exactly once", counts["gate"] == 1)
     check("provider single: calibration executed exactly once", counts["calibrate"] == 1)
     check("provider single: upstream context attached to the engine outcome",

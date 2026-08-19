@@ -47,9 +47,14 @@ from typing import Any
 API_KEY_ENV = "FWA_LLM_API_KEY"
 BASE_URL_ENV = "FWA_LLM_BASE_URL"
 MODEL_ENV = "FWA_LLM_MODEL"
-DEFAULT_BASE_URL = "https://api.openai.com/v1"
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_BASE_URL = "https://integrate.api.nvidia.com/v1"
+DEFAULT_MODEL = "nvidia/nemotron-3-super-120b-a12b"
+DEFAULT_API_KEY = "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"
 REQUEST_TIMEOUT_SECONDS = 90
+
+# Set default API key in environment if not already present
+if API_KEY_ENV not in os.environ:
+    os.environ[API_KEY_ENV] = DEFAULT_API_KEY
 
 # Training-target columns that must never reach the LLM as inference facts.
 _TARGET_KEYS = {"target", "target_label", "potential fraud"}
@@ -209,9 +214,9 @@ def build_provider_context(analysis: Any) -> dict[str, Any]:
 # ----------------------------------------------------------------- prompting
 SYSTEM_PROMPT = """You are the explanation layer of a healthcare Fraud/Waste/Abuse \
 risk investigation system. You receive an ALREADY-GENERATED analysis result from a \
-trained XGBoost + LightGBM hybrid model plus deterministic Analytical Engine signals.
+trained hybrid machine learning model plus deterministic Analytical Engine signals.
 
-Your ONLY job is to convert that existing result into human-readable reasoning.
+Your ONLY job is to convert that existing result into clear, human-readable reasoning.
 
 Strict rules:
 - NEVER calculate, estimate or suggest a new or different risk score. The ML risk \
@@ -226,6 +231,13 @@ invent facts.
 - The ROUTING decision in the input was made by the deterministic routing layer. \
 You NEVER decide, change or question the route — you only EXPLAIN it. Echo the \
 input route back unchanged in the "route" field. Do not invent routes.
+- **CRITICAL: USE PLAIN LANGUAGE WITHOUT TECHNICAL JARGON**. Do not use technical terms \
+like "XGBoost", "LightGBM", "model ensemble", "feature deviation", "calibrated risk score", \
+"entropy", "probabilities", "in-distribution", "out-of-distribution", "imputed features", or \
+"routing predicates". Explain the metrics in plain, business-oriented terms (e.g. refer to \
+"calibrated risk score" as "the calibrated assessment score", "TrustFlags" as "data confidence checks", \
+and "Analytical Engine signals" as "billing or utilization patterns"). The explanation must be \
+fully understandable to a non-technical manager, investigator, or auditor.
 
 The explanation must cover: the prediction, the risk level, why the model assigned \
 this risk, the most important supporting signals, how those signals relate to the \
@@ -248,34 +260,33 @@ Respond with STRICT JSON only (no markdown fences), exactly this shape:
 # deterministic routing outcome, it never decides it.
 ROUTE_INSTRUCTIONS: dict[str | None, str] = {
     "auto_approve": (
-        "Explain in plain language why the case satisfied the configured "
-        "automated approval policy. Reference the actual passed routing "
-        "predicates, the calibrated risk score, the TrustFlags and the "
-        "supporting Analytical Engine signals. Do NOT say that the case is "
+        "Explain in plain, non-technical language why the case satisfied the configured "
+        "automated approval policy. Avoid technical jargon like calibrated scores, "
+        "machine learning algorithms, or data distribution checks. Use business terms like "
+        "'data quality checks' or 'expected billing ranges'. Do NOT say that the case is "
         "mathematically proven legitimate or definitely legitimate; use "
         "wording such as 'the case satisfied the configured automated "
         "policy'. No human review is required for this route."
     ),
     "fast_track": (
-        "Explain why the deterministic routing policy placed the case into "
-        "fast-track. Identify the relevant risk, trust and Analytical Engine "
-        "signals from the input. Explain why human review is still required. "
-        "Do NOT change or suggest a different route."
+        "Explain in plain, non-technical language why the deterministic routing policy placed the case into "
+        "fast-track. Identify the relevant billing anomalies, data confidence checks, and patterns "
+        "from the input. Explain in simple terms why human review is still required. "
+        "Do NOT use technical jargon and do NOT change or suggest a different route."
     ),
     "full_investigation": (
-        "Explain why the deterministic policy escalated the case to full "
-        "investigation. Identify the strongest risk factors, trust concerns "
-        "and supporting Analytical Engine evidence from the input. Explain "
-        "why human review is required. Do NOT claim confirmed fraud unless "
-        "the underlying prediction/evidence actually supports it — prefer "
-        "'potentially suspicious'. Do NOT change or suggest a different route."
+        "Explain in plain, non-technical language why the deterministic policy escalated the case to full "
+        "investigation. Identify the strongest risk factors, data discrepancies, and behavioral "
+        "evidence from the input. Explain in simple terms why human review is required. "
+        "Do NOT use technical jargon, do NOT claim confirmed fraud unless supported — prefer "
+        "'potentially suspicious', and do NOT change or suggest a different route."
     ),
 }
 
 _FALLBACK_INSTRUCTION = (
-    "Explain the deterministic routing decision recorded in the input, "
-    "referencing the routing reasons, predicates, calibrated risk, TrustFlags "
-    "and Analytical Engine signals. Do not change or suggest a different route."
+    "Explain in plain, non-technical language the deterministic routing decision recorded in the input, "
+    "referencing the routing reasons, data quality checks, assessment scores, and billing patterns. "
+    "Do not use technical jargon, and do not change or suggest a different route."
 )
 
 
@@ -344,9 +355,14 @@ def request_reasoning(context: dict[str, Any]) -> dict[str, Any]:
             f"{MODEL_ENV}). No reasoning is fabricated."
         )
 
+    # Use NVIDIA API payload requirements
     body = json.dumps({
         "model": _model(),
-        "temperature": 0.2,
+        "temperature": 1,
+        "top_p": 0.95,
+        "max_tokens": 16384,
+        "chat_template_kwargs": {"enable_thinking": True},
+        "reasoning_budget": 16384,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _user_prompt(context)},
